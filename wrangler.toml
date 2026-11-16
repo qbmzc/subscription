@@ -3,7 +3,7 @@ main = "index.ts"
 compatibility_date = "2026-11-16"
 
 [[kv_namespaces]]
-binding = "sing-box"
+binding = "CONFIG_KV"
 id = "9d820b0b8f014ebdbfb10d50d714d715"
 
 [vars]
