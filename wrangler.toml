@@ -1,10 +1,10 @@
 name = "subscription"
 main = "index.ts"
-compatibility_date = "2026-06-06"
+compatibility_date = "2026-11-16"
 
 [[kv_namespaces]]
-binding = "CONFIG_KV"
-id = "51d5bd9fd8b54b958ec723defdac25b1"
+binding = "sing-box"
+id = "9d820b0b8f014ebdbfb10d50d714d715"
 
 [vars]
 ADMIN_USER = "admin"
