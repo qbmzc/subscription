@@ -1,4 +1,4 @@
-import { DEFAULT_MIHOMO_TEMPLATE, DEFAULT_SETTINGS, DEFAULT_SING_TEMPLATE, MIHOMO_KEY, SETTINGS_KEY, SING_BOX_KEY } from './defaults';
+import { DEFAULT_MIHOMO_TEMPLATE, DEFAULT_SETTINGS, DEFAULT_SING_NETWORK, DEFAULT_SING_TEMPLATE, MIHOMO_KEY, SETTINGS_KEY, SING_BOX_KEY } from './defaults';
 import type { AppState, Env, JsonMap } from './types';
 import { clone } from './utils';
 
@@ -44,6 +44,8 @@ export function defaultState(): AppState {
     singSubConfigs: {},
     singPatches: { android: defaultAndroidPatch(), other: {} },
     singGroupRules: [],
+    singNetwork: clone(DEFAULT_SING_NETWORK),
+    devices: [],
     singCache: { android: null, other: null },
     singTemplateUrl: '',
     mihomoTemplate: defaultMihomoTemplate,
@@ -56,7 +58,7 @@ export function defaultAndroidPatch(): JsonMap {
   return { route: { override_android_vpn: true } };
 }
 
-function normalizeSingState(value: any): Pick<AppState, 'singTemplate' | 'singTemplateUrl' | 'singSubs' | 'singSubConfigs' | 'singPatches' | 'singGroupRules' | 'singCache'> {
+function normalizeSingState(value: any): ReturnType<typeof pickSingState> {
   return {
     singTemplate: value.singTemplate || clone(DEFAULT_SING_TEMPLATE),
     singTemplateUrl: value.singTemplateUrl || '',
@@ -67,6 +69,8 @@ function normalizeSingState(value: any): Pick<AppState, 'singTemplate' | 'singTe
       other: value.singPatches?.other || {},
     },
     singGroupRules: value.singGroupRules || [],
+    singNetwork: { ...clone(DEFAULT_SING_NETWORK), ...value.singNetwork },
+    devices: value.devices || [],
     singCache: value.singCache || { android: null, other: null },
   };
 }
@@ -82,7 +86,7 @@ function normalizeMihomoState(value: any): Pick<AppState, 'mihomoTemplate' | 'mi
   };
 }
 
-function pickSingState(state: AppState): Pick<AppState, 'singTemplate' | 'singTemplateUrl' | 'singSubs' | 'singSubConfigs' | 'singPatches' | 'singGroupRules' | 'singCache'> {
+function pickSingState(state: AppState): Pick<AppState, 'singTemplate' | 'singTemplateUrl' | 'singSubs' | 'singSubConfigs' | 'singPatches' | 'singGroupRules' | 'singNetwork' | 'devices' | 'singCache'> {
   return {
     singTemplate: state.singTemplate,
     singTemplateUrl: state.singTemplateUrl,
@@ -90,6 +94,8 @@ function pickSingState(state: AppState): Pick<AppState, 'singTemplate' | 'singTe
     singSubConfigs: state.singSubConfigs,
     singPatches: state.singPatches,
     singGroupRules: state.singGroupRules,
+    singNetwork: state.singNetwork,
+    devices: state.devices,
     singCache: state.singCache,
   };
 }

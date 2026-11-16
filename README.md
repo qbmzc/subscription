@@ -2,6 +2,54 @@
 
 Cloudflare Worker 订阅管理面板，用一个 KV 存储 sing-box 与 mihomo 的模板、订阅集、合并结果和面板配置。
 
+## sing-box 1.14.4 设备订阅
+
+新增功能通过 **独立设备链接** 使用。原有普通订阅继续使用原来的模板、覆写、节点名称和缓存；新增设备及修改设备分流规则不会重新生成普通订阅缓存。先在测试设备验证，再自行决定是否替换其订阅链接。本机现有代理无需切换。
+
+在面板的 **覆写与分组** 页面：
+
+1. 设置公司 DNS、公司域名、WireGuard 目标网段和 AI 出口。默认公司 DNS 为 `192.168.99.99`，公司域名为 `test.com`、`taimei.com`，WireGuard 目标为 `10.0.0.0/24`。域名按后缀匹配，包含子域名。清空公司域名可停用公司 DNS 分流。
+2. 新增设备并选择 Android、iOS、macOS、Windows 或 Linux。WireGuard 可暂时留空，先检查其他功能。
+3. 填入该设备的 WireGuard endpoint JSON，保存后复制设备订阅链接。每台设备使用各自的地址、私钥和服务器端 peer；无需把真实密钥写进源码。
+4. 将下载的 JSON 用目标内核执行 `sing-box check -c config.json`。该命令只校验配置。各平台实际 VPN、路由和连通性仍需在测试设备验证。
+
+WireGuard endpoint 示例（替换所有示例值后保存）：
+
+```json
+{
+  "type": "wireguard",
+  "address": ["10.0.0.2/32"],
+  "private_key": "设备自己的 Base64 私钥",
+  "peers": [
+    {
+      "address": "服务器公网 IP 或域名",
+      "port": 51820,
+      "public_key": "服务器的 Base64 公钥",
+      "allowed_ips": ["10.0.0.0/24"],
+      "persistent_keepalive_interval": 25
+    }
+  ]
+}
+```
+
+设备输出固定使用 `wg-private` 作为 endpoint 标签，使用用户态接口和 `direct` 建立 WireGuard 底层连接。规则保留模板前面的嗅探、DNS 劫持，再插入 WireGuard 网段、公司域名直连和 AI 域名路由，优先于通用私网直连规则。公司域名由 `192.168.99.99` 直连解析；离开公司后仍需有能访问公司 DNS 和服务的网络路径。
+
+设备配置会迁移旧默认模板的 `block` 出站与“全球拦截”分组为 `reject` 规则动作；普通订阅保持原样。设备节点名称使用 `订阅名称 | 原节点名称`，保留不同订阅的同名节点，并更新节点间的 `detour` 引用。AI 需要固定出口 IP 时请选择具体节点，自动测速组可能切换节点。`auto_redirect` 仅在 Linux 设备保留，其他平台移除；设备的 mixed 代理只监听 `127.0.0.1`。
+
+设备订阅链接形如：
+
+```text
+/sub?device=<设备ID>&token=<该设备令牌>
+```
+
+设备平台决定输出格式，不依赖 User-Agent，也不会因 `target=mihomo` 输出另一种配置。设备令牌只能下载对应设备配置；重置令牌或删除设备即可撤销旧链接。设备 endpoint（含私钥）保存在当前 Worker 的 KV 中，管理员可在设备表单中编辑；该版本没有对 KV 中的私钥额外加密。设备链接包含访问凭据，请勿公开。
+
+## 订阅下载鉴权
+
+设备链接始终要求独立令牌。普通 sing-box 和 mihomo 链接的下载令牌在 **配置** 页面手动启用，独立于管理员密码、外部 API Token 和设备令牌。留空时保留现有普通订阅的公开访问方式。
+
+**启用或更换普通下载令牌会使原链接失效。** 请先复制面板上新生成的链接，再更新相关客户端。支持 `?token=<下载令牌>` 或 `Authorization: Bearer <下载令牌>`；下载响应使用 `Cache-Control: private, no-store`。
+
 ## 部署
 
 - fork本项目

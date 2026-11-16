@@ -12,10 +12,10 @@ export async function rebuildSingCaches(env: Env, state: AppState): Promise<void
   await saveSingBox(env, state);
 }
 
-function mergeSingBox(state: AppState, platform: 'android' | 'other'): JsonMap {
+export function mergeSingBox(state: AppState, platform: 'android' | 'other', modern = false): JsonMap {
   const template = clone(state.singTemplate || DEFAULT_SING_TEMPLATE);
   const templateOutbounds = Array.isArray(template.outbounds) ? template.outbounds : [];
-  const subscriptionOutbounds = Object.values(state.singSubConfigs)
+  const subscriptionOutbounds = modern ? collectSubscriptionNodes(state) : Object.values(state.singSubConfigs)
     .flatMap((config) => (Array.isArray(config?.outbounds) ? config.outbounds : []))
     .filter((outbound) => outbound?.tag && !isRuleOutbound(outbound) && !isGroupOutbound(outbound));
 
@@ -24,7 +24,7 @@ function mergeSingBox(state: AppState, platform: 'android' | 'other'): JsonMap {
   const nodeTags = [...nodeByTag.keys()];
   const regionMap = new Map<string, string[]>();
   for (const tag of nodeTags) {
-    const region = inferRegion(tag);
+    const region = inferRegion(modern ? tag.slice(tag.indexOf(' | ') + 3) : tag);
     regionMap.set(region, [...(regionMap.get(region) || []), tag]);
   }
 
@@ -56,11 +56,11 @@ function mergeSingBox(state: AppState, platform: 'android' | 'other'): JsonMap {
     }
   }
 
-  if (nodeTags.length > 0) {
+  if (nodeTags.length > 0 || modern) {
     rebuiltOutbounds.push({
       type: 'urltest',
       tag: '🔥AUTO',
-      outbounds: nodeTags,
+      outbounds: nodeTags.length ? nodeTags : ['direct'],
       url: 'https://cp.cloudflare.com',
       interval: '15m',
     });
@@ -70,11 +70,42 @@ function mergeSingBox(state: AppState, platform: 'android' | 'other'): JsonMap {
 
   template.outbounds = dedupeOutbounds(rebuiltOutbounds);
   if (!hasOutboundTag(template.outbounds, 'direct')) template.outbounds.push({ type: 'direct', tag: 'direct' });
-  if (!hasOutboundTag(template.outbounds, 'block')) template.outbounds.push({ type: 'block', tag: 'block' });
+  if (!modern && !hasOutboundTag(template.outbounds, 'block')) template.outbounds.push({ type: 'block', tag: 'block' });
 
   const patched = deepMerge(template, state.singPatches[platform] || {});
   if (platform !== 'android' && patched.route) delete patched.route.override_android_vpn;
-  return patched;
+  return modern ? migrateSingBox(patched) : patched;
+}
+
+function collectSubscriptionNodes(state: AppState): any[] {
+  return Object.entries(state.singSubConfigs).flatMap(([id, config]) => {
+    const source = state.singSubs.find((sub) => sub.id === id)?.name || id;
+    const nodes = (config.outbounds || []).filter((node: any) => node?.tag && !isRuleOutbound(node) && !isGroupOutbound(node));
+    const tags = new Map<string, string>(nodes.map((node: any) => [node.tag, `${source} | ${node.tag}`]));
+    return nodes.map((node: any) => {
+      const result = { ...clone(node), tag: tags.get(node.tag) };
+      if (tags.has(node.detour)) result.detour = tags.get(node.detour);
+      return result;
+    });
+  });
+}
+
+export function migrateSingBox(config: JsonMap): JsonMap {
+  const rejected = new Set<string>((config.outbounds || []).filter((node: any) => node.type === 'block').map((node: any) => node.tag));
+  const legacyBlockGroup = (config.outbounds || []).find((node: any) => node.tag === '🏴‍☠️全球拦截' && node.outbounds?.some((tag: string) => rejected.has(tag)));
+  if (legacyBlockGroup) rejected.add(legacyBlockGroup.tag);
+  config.outbounds = (config.outbounds || []).filter((node: any) => !rejected.has(node.tag));
+  for (const node of config.outbounds) {
+    if (node.outbounds) node.outbounds = node.outbounds.filter((tag: string) => !rejected.has(tag));
+    if (rejected.has(node.default)) delete node.default;
+  }
+  for (const rule of config.route?.rules || []) {
+    if (rejected.has(rule.outbound)) {
+      delete rule.outbound;
+      rule.action = 'reject';
+    }
+  }
+  return config;
 }
 
 function isRuleOutbound(outbound: any): boolean {

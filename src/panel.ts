@@ -1,6 +1,8 @@
 import yaml from 'js-yaml';
 import { COUNTRY_RULES } from './defaults';
-import type { AppState, RemoteItem } from './types';
+import { DEVICE_PLATFORMS, subscriptionUrl } from './profiles';
+import { mergeSingBox } from './sing-box';
+import type { AppState, DeviceProfile, RemoteItem } from './types';
 import { escapeHtml } from './utils';
 
 export function renderLogin(error = ''): Response {
@@ -41,9 +43,9 @@ export function renderPanel(state: AppState): Response {
       <h1>订阅管理</h1>
     </div>
     <nav class="top-actions">
-      <button type="button" data-copy="${escapeHtml(state.settings.publicPath)}">auto</button>
-      <button type="button" data-copy="${escapeHtml(`${state.settings.publicPath}?target=sing-box`)}">sing-box</button>
-      <button type="button" data-copy="${escapeHtml(`${state.settings.publicPath}?target=mihomo`)}">mihomo</button>
+      <button type="button" data-copy="${escapeHtml(subscriptionUrl(state))}">auto</button>
+      <button type="button" data-copy="${escapeHtml(subscriptionUrl(state, 'sing-box'))}">sing-box</button>
+      <button type="button" data-copy="${escapeHtml(subscriptionUrl(state, 'mihomo'))}">mihomo</button>
       <a href="${configPath(state)}">配置</a>
       <a href="${advancedPath(state)}">覆写与分组</a>
     </nav>
@@ -139,6 +141,7 @@ export function renderPanel(state: AppState): Response {
 }
 
 export function renderAdvancedPanel(state: AppState): Response {
+  const deviceOutbounds = mergeSingBox(state, 'other', true).outbounds;
   return new Response(`<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -155,6 +158,25 @@ export function renderAdvancedPanel(state: AppState): Response {
     </div>
   </header>
   <main class="layout">
+    <section class="wide">
+      <h2>设备订阅的 DNS 与分流</h2>
+      <p class="muted">以下规则仅作用于下方设备专用链接，现有普通订阅保持原有行为。公司 DNS 必须在当前网络可达；域名后缀自动包含子域名。</p>
+      <form data-api="sing/network" class="settings-grid profile-form">
+        <label>公司 DNS IP<input name="companyDns" value="${escapeHtml(state.singNetwork.companyDns)}"></label>
+        <label>WireGuard 目标网段（每行一个）<textarea name="wireguardCidrs" rows="3">${escapeHtml(state.singNetwork.wireguardCidrs.join('\n'))}</textarea></label>
+        <label>公司域名（每行一个；清空则停用公司 DNS 分流）<textarea name="companyDomains" rows="4">${escapeHtml(state.singNetwork.companyDomains.join('\n'))}</textarea></label>
+        <label>AI 域名（每行一个）<textarea name="aiDomains" rows="4">${escapeHtml(state.singNetwork.aiDomains.join('\n'))}</textarea></label>
+        <label>AI 出口（需要固定 IP 时选择具体节点）<select name="aiOutbound">${deviceOutbounds.filter((item: any) => !['block', 'dns'].includes(item.type)).map((item: any) => `<option value="${escapeHtml(item.tag)}" ${item.tag === state.singNetwork.aiOutbound ? 'selected' : ''}>${escapeHtml(item.tag)}</option>`).join('')}</select></label>
+        <button>保存设备分流规则</button>
+        <p data-feedback role="status" aria-live="polite" class="wide"></p>
+      </form>
+    </section>
+    <section class="wide">
+      <h2>设备与 WireGuard · sing-box 1.14.4</h2>
+      <p class="muted">先新增一台测试设备，再导入专用链接。每台设备使用独立 IP、私钥及服务端 peer。WireGuard endpoint 留空时可先测试 DNS 和 AI 分流。设备配置和密钥保存在当前 Worker 的 KV 中，下载链接也包含访问凭据，请妥善保管。</p>
+      ${state.devices.map((device) => `<details class="device-card"><summary>${escapeHtml(device.name)} · ${escapeHtml(device.platform)}${device.wireguard ? ' · WireGuard 已配置' : ''}</summary>${renderDeviceForm(state, device)}</details>`).join('')}
+      <details class="device-card"><summary>新增设备</summary>${renderDeviceForm(state)}</details>
+    </section>
     <section class="wide">
       <h2>sing-box 覆写</h2>
       <form data-api="sing/patches" class="split">
@@ -174,7 +196,7 @@ export function renderAdvancedPanel(state: AppState): Response {
   <div id="toast"></div>
   <script>${panelScript()}</script>
 </body>
-</html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+</html>`, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'private, no-store' } });
 }
 
 export function renderConfigPanel(state: AppState): Response {
@@ -195,13 +217,16 @@ export function renderConfigPanel(state: AppState): Response {
   </header>
   <main class="layout">
     <section class="wide">
-      <h2>路径与外部 API</h2>
+      <h2>路径与访问令牌</h2>
       <form data-api="settings" class="settings-grid">
         <label>订阅路径<input name="publicPath" value="${escapeHtml(state.settings.publicPath)}"></label>
         <label>面板路径<input name="panelPath" value="${escapeHtml(state.settings.panelPath)}"></label>
         <label>暴露 API 路径<input name="apiPath" value="${escapeHtml(state.settings.apiPath)}"></label>
         <label>API Token<input name="apiToken" value="${escapeHtml(state.settings.apiToken)}" placeholder="留空则禁用外部 API"></label>
+        <label>普通订阅下载 Token<input name="downloadToken" value="${escapeHtml(state.settings.downloadToken)}" autocomplete="off" placeholder="留空保留现有订阅链接"></label>
+        <p class="muted">设置下载 Token 会使原有无令牌订阅链接失效，请更新客户端链接。设备专用链接始终使用各自的令牌，与此设置独立。</p>
         <button>保存配置</button>
+        <button name="generateDownloadToken" value="1" data-confirm="启用新令牌后，原有普通订阅链接将失效。确认继续？">生成并启用下载 Token</button>
       </form>
     </section>
     <section class="wide">
@@ -228,6 +253,26 @@ export function advancedPath(state: AppState): string {
 export function configPath(state: AppState): string {
   const base = state.settings.panelPath.replace(/\/+$/, '') || '';
   return `${base}/config`;
+}
+
+function renderDeviceForm(state: AppState, device?: DeviceProfile): string {
+  const example = {
+    type: 'wireguard', address: ['10.0.0.2/32'], private_key: '填写该设备私钥',
+    peers: [{ address: '填写服务器公网 IP 或域名', port: 51820, public_key: '填写服务器公钥', allowed_ips: ['10.0.0.0/24'], persistent_keepalive_interval: 25 }],
+  };
+  return `<form data-api="sing/device" class="profile-form">
+    ${device ? `<input type="hidden" name="id" value="${escapeHtml(device.id)}">` : ''}
+    <label>设备名称<input name="name" required value="${escapeHtml(device?.name || '')}" placeholder="例如：Android 手机"></label>
+    <label>平台<select name="platform">${DEVICE_PLATFORMS.map((platform) => `<option ${device?.platform === platform ? 'selected' : ''}>${platform}</option>`).join('')}</select></label>
+    <label>WireGuard endpoint JSON（可留空）<textarea name="wireguard" rows="12" spellcheck="false" placeholder="${escapeHtml(JSON.stringify(example, null, 2))}">${escapeHtml(device?.wireguard ? JSON.stringify(device.wireguard, null, 2) : '')}</textarea></label>
+    <div class="actions">
+      <button>保存设备</button>
+      ${device ? `<button type="button" data-copy="${escapeHtml(subscriptionUrl(state, '', device))}">复制设备订阅链接</button>
+      <button formaction="/api/sing/device/rotate-token" data-confirm="重置后该设备的旧订阅链接将失效，确认继续？">重置设备令牌</button>
+      <button formaction="/api/sing/device/delete" data-confirm="删除后该设备订阅链接将失效，确认删除？">删除设备</button>` : ''}
+    </div>
+    <p data-feedback role="status" aria-live="polite"></p>
+  </form>`;
 }
 
 function renderGroupRules(state: AppState): string {
@@ -375,6 +420,13 @@ function styles(): string {
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .settings-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
     .settings-grid button { justify-self: start; }
+    .device-card { margin-top: 12px; border: 1px solid #333; padding: 12px; }
+    .device-card summary { cursor: pointer; min-height: 44px; display: list-item; color: #ddd; }
+    .profile-form { margin-top: 10px; }
+    .profile-form button, .profile-form input, .profile-form select { min-height: 44px; }
+    .profile-form label { color: #aaa; }
+    [data-feedback] { margin: 0; overflow-wrap: anywhere; }
+    button:disabled { opacity: .6; cursor: wait; }
     .code-block { margin: 0; overflow: auto; white-space: pre-wrap; border: 1px solid #222; border-radius: 2px; padding: 10px; background: #000; color: #aaa; }
     .advanced-link, .back-link { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; border: 1px solid #333; background: #080808; color: #ccc; border-radius: 2px; padding: 5px 8px; font-size: 12px; }
     .advanced-link:hover, .back-link:hover { background: #111; color: #fff; border-color: #444; }
@@ -436,6 +488,8 @@ function panelScript(): string {
       form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const submitter = event.submitter;
+        if (submitter?.dataset.confirm && !confirm(submitter.dataset.confirm)) return;
+        const feedback = form.querySelector('[data-feedback]');
         const api = submitter?.getAttribute('formaction')?.replace('/api/', '') || form.dataset.api;
         const body = api === 'sing/group-rules' ? readGroupRules(form) : Object.fromEntries(new FormData(form).entries());
         if (api === 'sing/group-rules') {
@@ -447,6 +501,9 @@ function panelScript(): string {
         }
         if (submitter?.dataset.delete) body.id = submitter.dataset.delete;
         if (submitter?.name) body[submitter.name] = submitter.value;
+        if (submitter) submitter.disabled = true;
+        if (feedback) feedback.textContent = '正在保存…';
+        try {
         const res = await fetch('/api/' + api, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -455,11 +512,19 @@ function panelScript(): string {
         let data = {};
         try { data = await res.json(); } catch {}
         if (!res.ok || data.error) {
+          if (feedback) feedback.textContent = data.error || '请求失败';
           show(data.error || '请求失败');
           return;
         }
         show('已保存');
+        if (feedback) feedback.textContent = '已保存';
         setTimeout(() => location.reload(), 500);
+        } catch {
+          if (feedback) feedback.textContent = '网络请求失败，请重试';
+          show('网络请求失败，请重试');
+        } finally {
+          if (submitter) submitter.disabled = false;
+        }
       });
     });
     function readGroupRules(form) {

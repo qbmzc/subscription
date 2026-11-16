@@ -1,8 +1,9 @@
 import { SESSION_TTL_SECONDS } from './defaults';
 import { createSession, getAdminPassword, getAdminUser, isDefaultCredential, requireAuth } from './auth';
 import { renderLogin } from './panel';
-import { saveSettings, saveMihomo } from './state';
-import { rebuildSingCaches, validateGroupRules } from './sing-box';
+import { saveSettings, saveMihomo, saveSingBox } from './state';
+import { parseDevice, parseNetwork, subscriptionUrl } from './profiles';
+import { mergeSingBox, rebuildSingCaches, validateGroupRules } from './sing-box';
 import { addMihomoSubscription, addSingBoxSubscription, importMihomoProxies, updateSingBoxSubscription } from './subscriptions';
 import type { AppState, Env } from './types';
 import { fetchText, jsonResponse, normalizePath, parseConfigText, parseJsonObject } from './utils';
@@ -38,9 +39,45 @@ export async function handleApi(request: Request, env: Env, state: AppState): Pr
     state.settings.panelPath = normalizePath(body.panelPath, '/');
     state.settings.apiPath = normalizePath(body.apiPath, '/external-api');
     state.settings.apiToken = String(body.apiToken || '');
+    state.settings.downloadToken = body.generateDownloadToken ? crypto.randomUUID() : String(body.downloadToken ?? state.settings.downloadToken).trim();
     state.settings.updatedAt = new Date().toISOString();
     await saveSettings(env, state);
     return jsonResponse({ ok: true, settings: state.settings });
+  }
+
+  if (action === 'sing/network') {
+    try {
+      const network = parseNetwork(body);
+      const outbounds = mergeSingBox(state, 'other', true).outbounds;
+      if (network.aiOutbound && !outbounds.some((item: any) => item.tag === network.aiOutbound)) return jsonResponse({ error: 'AI 出口不存在，请先在模板或订阅中添加' }, 400);
+      state.singNetwork = network;
+    } catch (error) {
+      return jsonResponse({ error: (error as Error).message }, 400);
+    }
+    await saveSingBox(env, state);
+    return jsonResponse({ ok: true });
+  }
+
+  if (action === 'sing/device') {
+    const existing = body.id ? state.devices.find((item) => item.id === body.id) : undefined;
+    if (body.id && !existing) return jsonResponse({ error: '设备不存在' }, 404);
+    try {
+      const device = parseDevice(body, existing);
+      state.devices = state.devices.filter((item) => item.id !== device.id).concat(device);
+    } catch (error) {
+      return jsonResponse({ error: (error as Error).message }, 400);
+    }
+    await saveSingBox(env, state);
+    return jsonResponse({ ok: true });
+  }
+
+  if (action === 'sing/device/delete' || action === 'sing/device/rotate-token') {
+    const device = state.devices.find((item) => item.id === body.id);
+    if (!device) return jsonResponse({ error: '设备不存在' }, 404);
+    if (action.endsWith('/delete')) state.devices = state.devices.filter((item) => item.id !== device.id);
+    else device.token = crypto.randomUUID();
+    await saveSingBox(env, state);
+    return jsonResponse({ ok: true });
   }
 
   if (action === 'sing/template') {
@@ -149,13 +186,15 @@ function renderState(state: AppState): Response {
     singCacheUpdatedAt: state.singCache.updatedAt,
     singTemplate: state.singTemplate,
     singPatches: state.singPatches,
+    singNetwork: state.singNetwork,
+    devices: state.devices.map(({ id, name, platform, wireguard }) => ({ id, name, platform, wireguardEnabled: !!wireguard })),
     mihomoTemplate: state.mihomoTemplate,
     mihomoProviders: state.mihomoProviders,
     publicUrls: {
-      auto: state.settings.publicPath,
-      singBox: `${state.settings.publicPath}?target=sing-box`,
-      singBoxAndroid: `${state.settings.publicPath}?target=sing-box-android`,
-      mihomo: `${state.settings.publicPath}?target=mihomo`,
+      auto: subscriptionUrl(state),
+      singBox: subscriptionUrl(state, 'sing-box'),
+      singBoxAndroid: subscriptionUrl(state, 'sing-box-android'),
+      mihomo: subscriptionUrl(state, 'mihomo'),
     },
   });
 }

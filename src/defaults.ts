@@ -1,7 +1,7 @@
 import yaml from 'js-yaml';
 import singBoxTemplate from '../template/template.json';
 import mihomoTemplateYaml from '../template/template.yaml';
-import type { JsonMap, Settings } from './types';
+import type { JsonMap, Settings, SingNetwork } from './types';
 
 export const MAX_FETCH_SIZE = 10 * 1024 * 1024;
 export const SETTINGS_KEY = 'settings_v1';
@@ -14,6 +14,15 @@ export const DEFAULT_SETTINGS: Settings = {
   panelPath: '/',
   apiPath: '/external-api',
   apiToken: '',
+  downloadToken: '',
+};
+
+export const DEFAULT_SING_NETWORK: SingNetwork = {
+  companyDns: '192.168.99.99',
+  companyDomains: ['test.com', 'taimei.com'],
+  wireguardCidrs: ['10.0.0.0/24'],
+  aiDomains: ['openai.com', 'chatgpt.com', 'oaistatic.com', 'oaiusercontent.com', 'anthropic.com', 'claude.ai', 'x.ai', 'grok.com'],
+  aiOutbound: '⌨️ AI',
 };
 
 export const DEFAULT_SING_TEMPLATE: JsonMap = singBoxTemplate as JsonMap;

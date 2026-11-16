@@ -14,6 +14,7 @@ export interface Settings {
   panelPath: string;
   apiPath: string;
   apiToken: string;
+  downloadToken: string;
   updatedAt?: string;
 }
 
@@ -43,6 +44,24 @@ export interface SingGroupRule {
   excludeTypes?: string[];
 }
 
+export interface SingNetwork {
+  companyDns: string;
+  companyDomains: string[];
+  wireguardCidrs: string[];
+  aiDomains: string[];
+  aiOutbound: string;
+}
+
+export type DevicePlatform = 'android' | 'ios' | 'macos' | 'windows' | 'linux';
+
+export interface DeviceProfile {
+  id: string;
+  name: string;
+  platform: DevicePlatform;
+  token: string;
+  wireguard: JsonMap | null;
+}
+
 export interface AppState {
   settings: Settings;
   singTemplate: JsonMap;
@@ -50,6 +69,8 @@ export interface AppState {
   singSubConfigs: Record<string, JsonMap>;
   singPatches: SingPlatformPatch;
   singGroupRules: SingGroupRule[];
+  singNetwork: SingNetwork;
+  devices: DeviceProfile[];
   singCache: {
     android: JsonMap | null;
     other: JsonMap | null;
