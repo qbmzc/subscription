@@ -4,7 +4,7 @@ Cloudflare Worker 订阅管理面板，用一个 KV 存储 sing-box 与 mihomo �
 
 ## sing-box 1.14.4 设备订阅
 
-新增功能通过 **独立设备链接** 使用。原有普通订阅继续使用原来的模板、覆写、节点名称和缓存；新增设备及修改设备分流规则不会重新生成普通订阅缓存。先在测试设备验证，再自行决定是否替换其订阅链接。本机现有代理无需切换。
+新增功能通过 **独立设备链接** 使用。原有普通订阅继续使用原来的模板、覆写、节点名称和缓存，下载时会处理平台专属选项；新增设备及修改设备分流规则不会重新生成普通订阅缓存。先在测试设备验证，再自行决定是否替换其订阅链接。本机现有代理无需切换。
 
 在面板的 **覆写与分组** 页面：
 
@@ -95,6 +95,8 @@ WireGuard endpoint 示例（替换所有示例值后保存）：
 /sub?target=sing-box
 /sub?target=sing-box-android
 ```
+
+普通 sing-box 下载也会按 User-Agent 识别平台。Mac、Windows、Android、iOS 和未识别平台的输出会移除 Linux 专属的 `auto_redirect`，无需清理旧 KV 缓存。可使用 `&platform=macos` 显式指定 Mac；Linux 客户端未携带系统信息时，可使用 `/sub?target=sing-box&platform=linux` 保留该选项。设备专用链接以设备设置中的平台为准。
 
 面板顶部的 `auto`、`sing-box`、`mihomo` 按钮只复制链接，不直接下载。
 

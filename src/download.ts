@@ -1,7 +1,7 @@
 import { buildMihomo } from './mihomo';
 import { mergeSingBox, rebuildSingCaches } from './sing-box';
-import { buildProfile } from './profiles';
-import type { AppState, Env } from './types';
+import { applyPlatformOptions, buildProfile, DEVICE_PLATFORMS } from './profiles';
+import type { AppState, DevicePlatform, Env } from './types';
 import { jsonResponse } from './utils';
 
 export async function downloadConfig(request: Request, env: Env, state: AppState): Promise<Response> {
@@ -34,7 +34,8 @@ export async function downloadConfig(request: Request, env: Env, state: AppState
     config = buildProfile(base, state.singNetwork, device);
   } else {
     if (!state.singCache.android || !state.singCache.other) await rebuildSingCaches(env, state);
-    config = target === 'sing-box-android' ? state.singCache.android : state.singCache.other;
+    const base = target === 'sing-box-android' ? state.singCache.android! : state.singCache.other!;
+    config = applyPlatformOptions(base, target === 'sing-box-android' ? 'android' : detectPlatform(request, url));
   }
   return new Response(JSON.stringify(config, null, 2), {
     headers: {
@@ -43,6 +44,18 @@ export async function downloadConfig(request: Request, env: Env, state: AppState
       'Content-Disposition': `attachment; filename="${target}.json"`,
     },
   });
+}
+
+function detectPlatform(request: Request, url: URL): DevicePlatform | 'other' {
+  const platform = url.searchParams.get('platform') as DevicePlatform;
+  if (DEVICE_PLATFORMS.includes(platform)) return platform;
+  const ua = request.headers.get('User-Agent') || '';
+  if (/Android|SFA/i.test(ua)) return 'android';
+  if (/iPhone|iPad|iOS/i.test(ua)) return 'ios';
+  if (/Macintosh|Mac OS|Darwin/i.test(ua)) return 'macos';
+  if (/Windows/i.test(ua)) return 'windows';
+  if (/Linux/i.test(ua)) return 'linux';
+  return 'other';
 }
 
 function detectTarget(request: Request, url: URL): 'mihomo' | 'sing-box-android' | 'sing-box' {

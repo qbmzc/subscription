@@ -33,13 +33,9 @@ export function parseDevice(input: Record<string, unknown>, existing?: DevicePro
 }
 
 export function buildProfile(base: JsonMap, network: SingNetwork, device?: DeviceProfile): JsonMap {
-  const config = clone(base);
+  const config = applyPlatformOptions(base, device?.platform || 'other');
   for (const inbound of config.inbounds || []) {
     if (inbound.type === 'mixed') inbound.listen = '127.0.0.1';
-  }
-  // auto_redirect is Linux-only.
-  if (device?.platform !== 'linux') {
-    for (const inbound of config.inbounds || []) delete inbound.auto_redirect;
   }
   const rules: JsonMap[] = [];
   config.route ||= {};
@@ -68,6 +64,14 @@ export function buildProfile(base: JsonMap, network: SingNetwork, device?: Devic
   // Preserve sniffing/DNS interception before inserting routes ahead of private-address bypass.
   const insertion = firstRoute < 0 ? existingRules.length : firstRoute;
   config.route.rules = [...existingRules.slice(0, insertion), ...rules, ...existingRules.slice(insertion)];
+  return config;
+}
+
+export function applyPlatformOptions(base: JsonMap, platform: DevicePlatform | 'other'): JsonMap {
+  const config = clone(base);
+  if (platform !== 'linux') {
+    for (const inbound of config.inbounds || []) delete inbound.auto_redirect;
+  }
   return config;
 }
 
